@@ -1,0 +1,83 @@
+# Tennis Analysis System — single source of truth for model paths, thresholds and
+# video settings. Every value here is overridable; see tennis_analysis/config.py for
+# the schema and defaults.
+
+video:
+  # Process every Nth frame (1 = every frame). Raising this trades temporal
+  # resolution for speed; speeds and distances are corrected for the stride.
+  frame_stride: 1
+  # Cap on frames processed (null = whole video). Handy for smoke tests.
+  max_frames: null
+  output_fps: null  # null = inherit the source video's FPS
+
+players:
+  model: yolo11n.pt          # pretrained COCO model; person class only
+  confidence: 0.5
+  tracker: bytetrack.yaml    # Ultralytics built-in tracker config
+  # Players are picked as the 2 tracks closest to the court after homography.
+  # Tracks further than this (metres, outside the doubles court) are discarded.
+  court_margin_m: 3.0
+  # A track must appear in at least this fraction of frames to count as a player.
+  min_track_presence: 0.1
+
+ball:
+  model: models/ball_yolo11n.pt   # produced by scripts/train_ball_detector.py
+  confidence: 0.15                # balls are small and faint; keep this low
+  imgsz: 640
+  kalman:
+    # Constant-acceleration model. Higher process noise = trusts detections more.
+    process_noise: 1.0
+    measurement_noise: 10.0
+    # Drop the track after this many consecutive frames with no detection.
+    max_age: 12
+    # Gating: reject detections further than this (pixels) from the prediction.
+    max_gate_distance: 150.0
+
+court:
+  model: models/court_keypoints_resnet18.pt
+  input_size: 224
+  min_keypoint_confidence: 0.5
+  ransac_threshold: 5.0
+  # Reject a frame's homography if mean reprojection error exceeds this (metres).
+  max_reprojection_error_m: 1.0
+  # Court keypoints are near-static for a fixed camera; refit only every N frames
+  # and reuse the last good homography in between.
+  refit_interval: 30
+
+analytics:
+  # Rolling window (in processed frames) for smoothing speed estimates.
+  speed_window: 5
+  # Physically implausible speeds are clipped out as tracking noise.
+  max_player_speed_kmh: 40.0
+  max_ball_speed_kmh: 250.0
+
+stroke:
+  enabled: true
+  pose_model: yolo11n-pose.pt
+  classifier: models/stroke_classifier.joblib
+  # Backend used when training: "random_forest" (baseline) or "cnn1d".
+  backend: random_forest
+  # Half-width of the pose window sampled around each shot moment, in seconds.
+  window_seconds: 0.25
+  # Ball-trajectory direction change (degrees) that marks a candidate shot.
+  min_direction_change_deg: 45.0
+  # Minimum ball speed change (px/frame) to qualify as a strike.
+  min_speed_change: 4.0
+  # Suppress shot moments closer together than this (seconds).
+  min_shot_interval_s: 0.4
+  labels: [serve, forehand, backhand, volley]
+
+output:
+  video_filename: annotated.mp4
+  shots_csv: shots.csv
+  shots_json: shots.json
+  tracks_csv: tracks.csv
+  draw_mini_court: true
+  draw_speeds: true
+  draw_stroke_labels: true
+  # Mini-court overlay geometry, in pixels.
+  mini_court:
+    width: 220
+    height: 460
+    margin: 24
+    position: top_right   # one of: top_left, top_right, bottom_left, bottom_right

@@ -1,0 +1,51 @@
+# --- Local agent / assistant config (kept out of the public repo) --------------
+CLAUDE.md
+.claude/
+.cursor/
+.aider*
+.github/copilot-instructions.md
+
+# --- Secrets -------------------------------------------------------------------
+.env
+.env.*
+*.key
+secrets.yaml
+# Roboflow SDK caches the API key here after a download.
+.roboflow
+roboflow.json
+
+# --- Python --------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.so
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+
+# --- Datasets and trained weights — fetched/trained locally, never committed ----
+data/
+models/*
+!models/.gitkeep
+runs/
+
+# --- Inputs and outputs --------------------------------------------------------
+input_videos/*
+!input_videos/.gitkeep
+output/*
+!output/.gitkeep
+
+# Ultralytics auto-downloads pretrained checkpoints into the working directory
+yolo11*.pt
+yolov8*.pt
+*.engine
+
+# --- OS / editor ---------------------------------------------------------------
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

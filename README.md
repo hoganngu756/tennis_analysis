@@ -60,9 +60,13 @@ completes with everything else intact**:
 
 | Missing weights | What still works | What you lose |
 |---|---|---|
-| `models/ball_yolo11n.pt` | Player tracking, court mapping, player speeds/distances | Ball track, ball speed, shot detection, stroke labels |
-| `models/court_keypoints_resnet18.pt` | Player + ball tracking in pixel space, stroke classification | Real-world units (km/h, metres), mini-court overlay |
-| `models/stroke_classifier.joblib` | Everything through stage 5 | Stroke labels and the shot log |
+| ball detector | Player tracking, court mapping, player speeds/distances | Ball track, ball speed, shot detection, stroke labels |
+| court keypoints | Player + ball tracking in pixel space, stroke classification | Real-world units (km/h, metres), mini-court overlay |
+| stroke classifier | Everything through stage 5, **including shot-moment detection** | Only the stroke *names* — shots are logged as `unclassified` |
+
+That last row matters: shot moments come from the ball trajectory alone, so without a
+classifier you still get a timestamped shot log with ball and player speeds. That log
+is what you need to bootstrap a labelled set from your own footage.
 
 So a fresh clone on a new clip produces an annotated video with tracked players
 immediately, and each stage you train lights up more of the output.
@@ -175,6 +179,69 @@ extraction dominates, and is cached to Drive so retraining is instant).
 
 Both trainers accept the same `--device` values (`0`, `cuda`, `mps`, `cpu`); omit it to
 auto-select. Apple Silicon works via `mps` but is several times slower than a T4.
+
+### Using a checkpoint you already have
+
+You don't have to train from scratch. Point `config.yaml` at existing weights:
+
+```yaml
+ball:
+  model: models/your_ball_model.pt
+court:
+  model: models/your_keypoints_model.pth
+  architecture: auto          # fingerprints the state dict
+  keypoint_order: null        # set this if the ordering differs — see below
+```
+
+**Ball models** load through Ultralytics, which covers YOLOv5u/v8/v11 checkpoints
+trained with the `ultralytics` package. A checkpoint from the *standalone*
+`ultralytics/yolov5` repo pickles classes from that repo's namespace and will not load
+here without conversion. Check with:
+
+```bash
+python -c "import zipfile,re; z=zipfile.ZipFile('models/your.pt'); \
+print({m.split(b'\n')[0].decode() for n in z.namelist() if n.endswith('.pkl') \
+for m in re.findall(rb'[a-z_.]{4,40}\n[A-Za-z_]+\n', z.read(n))})"
+```
+
+`ultralytics.nn.tasks` in the output means it will load.
+
+**Court models** are fingerprinted automatically — `architecture: auto` handles both
+this project's dual-head ResNet18 and the single-head `ResNet{18,34,50} → fc(28)`
+regressors that circulate publicly. Single-head models have no visibility branch, so
+all keypoints report full confidence.
+
+#### ⚠️ Verify keypoint ordering before you trust the numbers
+
+The homography maps keypoint *i* to a fixed court location. If your checkpoint emits
+them in a different order, **nothing throws** — RANSAC fits a plausible-looking
+homography and every speed and distance is quietly wrong.
+
+Naive sanity checks won't catch it either: measuring the baseline width and sideline
+length uses only the four corners, which are usually already in the right order.
+**Reprojection error is the diagnostic.** On a real frame:
+
+```python
+from tennis_analysis.config import Config
+from tennis_analysis.court_keypoints.detector import CourtKeypointDetector
+from tennis_analysis.court_keypoints.geometry import CourtHomography
+import cv2
+
+cfg = Config.load("config.yaml")
+frame = cv2.VideoCapture("input_videos/your_clip.mp4").read()[1]
+kps, conf = CourtKeypointDetector(cfg.court).detect(frame)
+print(CourtHomography.from_keypoints(kps, conf).reprojection_error, "m")
+```
+
+Under ~0.1 m means the ordering is right. Several metres means it is not — plot the
+points with their indices, compare against `KEYPOINT_NAMES` in
+[`geometry.py`](tennis_analysis/court_keypoints/geometry.py), and set
+`court.keypoint_order` to the permutation mapping canonical index → checkpoint index.
+
+For reference, one widely circulated checkpoint orders the singles corners
+`TL, BL, TR, BR` where the canonical order is `TL, TR, BL, BR`, needing
+`[0,1,2,3,4,6,5,7,8,9,10,11,12,13]`. That single swap moved reprojection error from
+**3.61 m to 0.02 m**.
 
 ### Ball detector (stage 3)
 
@@ -334,7 +401,7 @@ config.yaml                      all thresholds and model paths
 ## Tests
 
 ```bash
-pytest tests/ -q          # 165 tests, ~5 s
+pytest tests/ -q          # 193 tests, ~11 s
 ```
 
 Coverage concentrates on the logic that is verifiable in isolation, using analytically

@@ -21,7 +21,7 @@ players:
   min_track_presence: 0.1
 
 ball:
-  model: models/ball_yolo11n.pt   # produced by scripts/train_ball_detector.py
+  model: models/yolo5_last.pt     # or train your own: scripts/train_ball_detector.py
   confidence: 0.15                # balls are small and faint; keep this low
   imgsz: 640
   kalman:
@@ -34,8 +34,17 @@ ball:
     max_gate_distance: 150.0
 
 court:
-  model: models/court_keypoints_resnet18.pt
+  model: models/keypoints_model.pth
   input_size: 224
+  # Checkpoint layout: "auto" fingerprints the state dict. Handles both this
+  # project's dual-head ResNet18 and single-head ResNet regressors.
+  architecture: auto
+  # Maps this project's canonical keypoint index -> the checkpoint's output index.
+  # This checkpoint orders the singles corners TL, BL, TR, BR whereas the canonical
+  # order is TL, TR, BL, BR, so indices 5 and 6 swap. Getting this wrong does NOT
+  # throw: RANSAC still fits a plausible homography, and every distance silently
+  # comes out wrong. Verify visually before trusting a new checkpoint.
+  keypoint_order: [0, 1, 2, 3, 4, 6, 5, 7, 8, 9, 10, 11, 12, 13]
   min_keypoint_confidence: 0.5
   ransac_threshold: 5.0
   # Reject a frame's homography if mean reprojection error exceeds this (metres).
@@ -78,6 +87,11 @@ output:
   # Mini-court overlay geometry, in pixels.
   mini_court:
     width: 220
-    height: 460
+    # Sized to preserve the aspect of the court-plus-surround span:
+    # 220 * (23.77 + 2*surround) / (10.97 + 2*surround) ~= 368.
+    height: 370
     margin: 24
     position: top_right   # one of: top_left, top_right, bottom_left, bottom_right
+    # Metres of run-off drawn on every side. Players receive from several metres
+    # behind the baseline; with no surround they fall off the canvas entirely.
+    surround_m: 4.0

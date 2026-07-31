@@ -38,14 +38,21 @@ class MiniCourt:
             config: Overlay size, margin and corner placement.
         """
         self.config = config
-        # Inner padding so player markers near the baseline are not clipped.
-        self._pad = 12
+        self._pad = 6
         self._draw_w = config.width - 2 * self._pad
         self._draw_h = config.height - 2 * self._pad
+        # The canvas spans the court plus a run-off surround on every side, so a
+        # player receiving from behind the baseline still lands inside the view.
+        self._surround = max(0.0, config.surround_m)
+        self._span_x = DOUBLES_WIDTH + 2 * self._surround
+        self._span_y = COURT_LENGTH + 2 * self._surround
         self._base = self._render_court()
 
     def court_to_canvas(self, court_xy: tuple[float, float]) -> tuple[int, int]:
         """Map a court-space point in metres to mini-court canvas pixels.
+
+        Points outside the court are still mapped; they land in the surround, and
+        only fall off the canvas once they exceed it.
 
         Args:
             court_xy: ``(x, y)`` in metres in the court frame.
@@ -54,9 +61,21 @@ class MiniCourt:
             ``(px, py)`` integer pixel coordinates on the mini-court canvas.
         """
         x, y = court_xy
-        px = self._pad + (x / DOUBLES_WIDTH) * self._draw_w
-        py = self._pad + (y / COURT_LENGTH) * self._draw_h
+        px = self._pad + ((x + self._surround) / self._span_x) * self._draw_w
+        py = self._pad + ((y + self._surround) / self._span_y) * self._draw_h
         return int(round(px)), int(round(py))
+
+    def is_on_canvas(self, court_xy: tuple[float, float]) -> bool:
+        """Whether a court-space point falls within the rendered canvas.
+
+        Args:
+            court_xy: ``(x, y)`` in metres in the court frame.
+
+        Returns:
+            ``True`` if the point would draw inside the canvas bounds.
+        """
+        px, py = self.court_to_canvas(court_xy)
+        return 0 <= px < self.config.width and 0 <= py < self.config.height
 
     def _render_court(self) -> np.ndarray:
         """Draw the static court lines once, to be copied per frame."""
@@ -116,7 +135,7 @@ class MiniCourt:
         canvas = self._base.copy()
 
         for slot, (track_id, position) in enumerate(sorted(players.items())):
-            if not np.isfinite(position).all():
+            if not np.isfinite(position).all() or not self.is_on_canvas(position):
                 continue
             color = PLAYER_COLORS[slot % len(PLAYER_COLORS)]
             point = self.court_to_canvas(position)
@@ -132,7 +151,7 @@ class MiniCourt:
                 cv2.LINE_AA,
             )
 
-        if ball is not None and np.isfinite(ball).all():
+        if ball is not None and np.isfinite(ball).all() and self.is_on_canvas(ball):
             cv2.circle(canvas, self.court_to_canvas(ball), 3, _BALL_COLOR, -1, cv2.LINE_AA)
 
         return canvas

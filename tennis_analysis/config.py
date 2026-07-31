@@ -66,6 +66,12 @@ class CourtConfig:
     ransac_threshold: float = 5.0
     max_reprojection_error_m: float = 1.0
     refit_interval: int = 30
+    #: Checkpoint architecture. "auto" fingerprints the state dict, which handles both
+    #: this project's dual-head model and the common single-head public models.
+    architecture: Literal["auto", "resnet18_dual", "resnet_fc"] = "auto"
+    #: Permutation mapping this project's canonical keypoint index to the checkpoint's
+    #: output index. ``None`` means the checkpoint already uses the canonical order.
+    keypoint_order: list[int] | None = None
 
 
 @dataclass
@@ -99,8 +105,12 @@ class MiniCourtConfig:
     """Mini-court overlay geometry, in pixels."""
 
     width: int = 220
-    height: int = 460
+    height: int = 370
     margin: int = 24
+    #: Metres of run-off drawn around the court on every side. Players routinely
+    #: stand several metres behind the baseline to receive; without this they fall
+    #: outside the canvas and simply do not render.
+    surround_m: float = 4.0
     position: Literal["top_left", "top_right", "bottom_left", "bottom_right"] = (
         "top_right"
     )

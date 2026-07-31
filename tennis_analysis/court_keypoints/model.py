@@ -61,6 +61,33 @@ class CourtKeypointNet(nn.Module):
         return coords, visibility
 
 
+def build_resnet_fc_regressor(depth: int, num_keypoints: int = NUM_KEYPOINTS) -> nn.Module:
+    """Build a single-head ResNet keypoint regressor.
+
+    This is the architecture used by most publicly circulated tennis-court keypoint
+    models: a stock torchvision ResNet with ``fc`` replaced by a ``2 * K`` output, and
+    no visibility branch. Such models emit raw pixel coordinates in the *network input*
+    resolution rather than normalised values.
+
+    Args:
+        depth: ResNet depth — 18, 34 or 50.
+        num_keypoints: Number of keypoints regressed.
+
+    Returns:
+        The constructed (randomly initialised) network.
+
+    Raises:
+        ValueError: If ``depth`` is not a supported ResNet depth.
+    """
+    builders = {18: models.resnet18, 34: models.resnet34, 50: models.resnet50}
+    if depth not in builders:
+        raise ValueError(f"unsupported ResNet depth {depth}; expected one of {sorted(builders)}")
+
+    net = builders[depth](weights=None)
+    net.fc = nn.Linear(net.fc.in_features, num_keypoints * 2)
+    return net
+
+
 def keypoint_loss(
     pred_coords: torch.Tensor,
     pred_visibility: torch.Tensor,

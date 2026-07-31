@@ -50,6 +50,8 @@ logger = logging.getLogger(__name__)
 MAX_STRIKER_DISTANCE_M = 4.0
 #: Fallback in pixels, used when no homography is available.
 MAX_STRIKER_DISTANCE_PX = 250.0
+#: Stroke label used when a shot moment is found but no classifier is loaded.
+UNCLASSIFIED_STROKE = "unclassified"
 
 
 @dataclass
@@ -364,9 +366,12 @@ class TennisAnalysisPipeline:
         ball_speeds: list[float | None],
         effective_fps: float,
     ) -> list[Shot]:
-        """Find shot moments and classify the stroke at each one."""
-        if not self.enable_stroke or self._stroke_classifier is None:
-            return []
+        """Find shot moments and, if a classifier is loaded, name the stroke at each.
+
+        Shot *moments* come from the ball trajectory alone, so they are detected even
+        without a stroke classifier — they get logged as ``unclassified``. That log is
+        what you need to bootstrap a labelled set from your own footage.
+        """
         if self._ball_detector is None:
             self._warn("shot detection skipped: ball tracking is unavailable")
             return []
@@ -428,14 +433,16 @@ class TennisAnalysisPipeline:
             if striker is None:
                 continue
 
-            start, end = window_bounds(
-                index, stroke_config.window_seconds, effective_fps, len(observations)
-            )
-            window = build_pose_window(poses_by_player[striker], start, end)
-            if window is None:
-                continue
+            stroke, confidence = UNCLASSIFIED_STROKE, 0.0
+            if self._stroke_classifier is not None:
+                start, end = window_bounds(
+                    index, stroke_config.window_seconds, effective_fps, len(observations)
+                )
+                window = build_pose_window(poses_by_player[striker], start, end)
+                if window is None:
+                    continue
+                stroke, confidence = self._stroke_classifier.predict(window)
 
-            stroke, confidence = self._stroke_classifier.predict(window)
             shots.append(
                 Shot(
                     frame_index=observation.frame_index,

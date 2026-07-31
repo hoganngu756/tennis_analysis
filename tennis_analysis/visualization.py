@@ -132,7 +132,9 @@ def draw_stroke_label(
     Returns:
         The same ``frame``, for chaining.
     """
-    text = f"{stroke.upper()} {confidence:.0%}"
+    # A shot moment found without a classifier has no meaningful confidence; showing
+    # "0%" next to it reads as a failed prediction rather than an unlabelled one.
+    text = f"{stroke.upper()} {confidence:.0%}" if confidence > 0 else stroke.upper()
     x, y = bbox_top_left
     _draw_label(frame, text, (x, max(24, y - 46)), _TEXT_COLOR, background=_STROKE_BG, scale=0.6)
     return frame
